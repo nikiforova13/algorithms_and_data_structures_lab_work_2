@@ -10,12 +10,12 @@ from app.hash_table import HashTable
 
 
 def generate_key():
-    """Генерирует случайный ключ формата цццБцц."""
+    """Генерирует случайный ключ формата цББББц."""
     digits = string.digits
     letters = string.ascii_uppercase
-    return (''.join(random.choice(digits) for _ in range(3)) +
-            random.choice(letters) +
-            ''.join(random.choice(digits) for _ in range(2)))
+    return (random.choice(digits) +
+            ''.join(random.choice(letters) for _ in range(4)) +
+            random.choice(digits))
 
 
 def analyze_hash_distribution(num_keys=7500):
@@ -25,7 +25,7 @@ def analyze_hash_distribution(num_keys=7500):
     Args:
         num_keys: Количество ключей для анализа
     """
-    ht = HashTable(size=2500)
+    ht = HashTable(size=1500)
     hash_distribution = Counter()
     
     print(f"Генерация {num_keys} ключей...")
@@ -33,8 +33,8 @@ def analyze_hash_distribution(num_keys=7500):
     for i in range(num_keys):
         key = generate_key()
         keys_generated.append(key)
-        h1 = ht.hash1(key)
-        hash_distribution[h1] += 1
+        h = ht.hash(key)
+        hash_distribution[h] += 1
         
         if (i + 1) % 1000 == 0:
             print(f"Обработано {i + 1} ключей...")

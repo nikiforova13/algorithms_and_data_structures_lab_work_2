@@ -4,15 +4,15 @@ from typing import Optional, Tuple, List
 
 class HashTable:
     """
-    Хеш-таблица с двойным хешированием для разрешения коллизий.
-    Формат ключа: цццБцц (3 цифры, 1 большая буква, 2 цифры)
-    Количество сегментов: 2500
+    Хеш-таблица с открытым хешированием (метод цепочек) для разрешения коллизий.
+    Формат ключа: цББББц (1 цифра, 4 большие буквы, 1 цифра)
+    Количество сегментов: 1500
     """
     
-    # Формат ключа: 3 цифры, 1 большая буква, 2 цифры
-    KEY_PATTERN = re.compile(r'^\d{3}[A-Z]\d{2}$')
+    # Формат ключа: 1 цифра, 4 большие буквы, 1 цифра
+    KEY_PATTERN = re.compile(r'^\d[A-Z]{4}\d$')
     
-    def __init__(self, size: int = 2500):
+    def __init__(self, size: int = 1500):
         """
         Инициализация хеш-таблицы.
         
@@ -20,9 +20,9 @@ class HashTable:
             size: Размер таблицы (количество сегментов)
         """
         self.size = size
-        self.table: List[Optional[Tuple[str, any]]] = [None] * size
+        # Каждый сегмент - это список элементов (цепочка)
+        self.table: List[List[Tuple[str, any]]] = [[] for _ in range(size)]
         self.count = 0  # Количество элементов в таблице
-        self.deleted_marker = object()  # Маркер удаленного элемента
     
     def validate_key(self, key: str) -> bool:
         """
@@ -32,121 +32,76 @@ class HashTable:
             key: Ключ для проверки
             
         Returns:
-            True если ключ соответствует формату цццБцц, иначе False
+            True если ключ соответствует формату цББББц, иначе False
         """
         return bool(self.KEY_PATTERN.match(key))
     
-    def hash1(self, key: str) -> int:
+    def hash(self, key: str) -> int:
         """
-        Первая хеш-функция (основная).
+        Хеш-функция.
         Использует полиномиальное хеширование.
         
         Args:
             key: Ключ для хеширования
             
         Returns:
-            Хеш-значение
+            Хеш-значение (номер сегмента)
         """
         hash_value = 0
         for char in key:
             hash_value = (hash_value * 31 + ord(char)) % self.size
         return hash_value
     
-    def hash2(self, key: str) -> int:
-        """
-        Вторая хеш-функция для двойного хеширования.
-        Должна возвращать значение, взаимно простое с размером таблицы.
-        
-        Args:
-            key: Ключ для хеширования
-            
-        Returns:
-            Хеш-значение для шага
-        """
-        hash_value = 0
-        for char in key:
-            hash_value = (hash_value * 37 + ord(char)) % self.size
-        
-        # Убеждаемся, что hash2 не равен 0 и взаимно прост с size
-        if hash_value == 0:
-            hash_value = 1
-        
-        # Если size четное, делаем hash2 нечетным
-        if self.size % 2 == 0 and hash_value % 2 == 0:
-            hash_value += 1
-        
-        return hash_value
-    
-    def find_position(self, key: str, for_insert: bool = False) -> Optional[int]:
-        """
-        Находит позицию для ключа в таблице.
-        
-        Args:
-            key: Ключ для поиска
-            for_insert: Если True, ищет позицию для вставки (может вернуть позицию удаленного элемента)
-            
-        Returns:
-            Индекс позиции или None если не найдено (и for_insert=False)
-        """
-        if not self.validate_key(key):
-            return None
-        
-        h1 = self.hash1(key)
-        h2 = self.hash2(key)
-        
-        for i in range(self.size):
-            index = (h1 + i * h2) % self.size
-            item = self.table[index]
-            
-            if item is None:
-                # Пустая ячейка найдена
-                if for_insert:
-                    return index
-                else:
-                    return None
-            
-            if item is self.deleted_marker:
-                # Удаленная ячейка - продолжаем поиск для вставки
-                if for_insert:
-                    continue
-            
-            if isinstance(item, tuple) and item[0] == key:
-                return index
-        
-        return None
-    
     def add(self, key: str, value: any = None) -> bool:
         """
         Добавляет элемент в хеш-таблицу.
         
         Args:
-            key: Ключ элемента (формат цццБцц)
+            key: Ключ элемента (формат цББББц)
             value: Значение элемента
             
         Returns:
-            True если элемент добавлен, False если таблица переполнена или неверный ключ
+            True если элемент добавлен, False если неверный ключ или переполнение
         """
         if not self.validate_key(key):
             return False
         
         # Проверка переполнения
-        if self.count >= self.size * 0.9:  # Предупреждение при заполнении >90%
-            if self.count >= self.size:
-                return False  # Таблица переполнена
+        filled_segments = sum(1 for chain in self.table if chain)
+        if filled_segments > 0:
+            avg_chain_length = self.count / filled_segments
+        else:
+            avg_chain_length = 0
+        
+        # Критическое переполнение: средняя длина цепочки > 20 или все сегменты заполнены и средняя длина > 15
+        if avg_chain_length > 20:
+            print("⚠ ОШИБКА: Критическое переполнение! Средняя длина цепочки превышает 20 элементов!")
+            return False
+        
+        if filled_segments == self.size and avg_chain_length > 15:
+            print("⚠ ОШИБКА: Критическое переполнение! Все сегменты заполнены и средняя длина цепочки > 15!")
+            return False
+        
+        # Предупреждения
+        if avg_chain_length > 10:
+            print("⚠ ПРЕДУПРЕЖДЕНИЕ: Средняя длина цепочки превышает 10 элементов!")
+        
+        if self.count >= self.size * 0.95:
+            print("⚠ ПРЕДУПРЕЖДЕНИЕ: Таблица заполнена более чем на 95%!")
+        
+        # Вычисляем сегмент
+        segment = self.hash(key)
+        chain = self.table[segment]
         
         # Проверяем, существует ли уже элемент с таким ключом
-        existing_pos = self.find_position(key, for_insert=False)
-        if existing_pos is not None:
-            # Обновляем существующий элемент
-            self.table[existing_pos] = (key, value)
-            return True
+        for i, (k, v) in enumerate(chain):
+            if k == key:
+                # Обновляем существующий элемент
+                chain[i] = (key, value)
+                return True
         
-        # Ищем позицию для вставки
-        pos = self.find_position(key, for_insert=True)
-        if pos is None:
-            return False  # Не найдено место (переполнение)
-        
-        self.table[pos] = (key, value)
+        # Добавляем новый элемент в цепочку
+        chain.append((key, value))
         self.count += 1
         return True
     
@@ -160,9 +115,16 @@ class HashTable:
         Returns:
             Значение элемента или None если не найдено
         """
-        pos = self.find_position(key, for_insert=False)
-        if pos is not None:
-            return self.table[pos][1]
+        if not self.validate_key(key):
+            return None
+        
+        segment = self.hash(key)
+        chain = self.table[segment]
+        
+        for k, v in chain:
+            if k == key:
+                return v
+        
         return None
     
     def search_by_key(self, key: str) -> Optional[Tuple[int, str, any]]:
@@ -175,34 +137,36 @@ class HashTable:
         Returns:
             Кортеж (номер сегмента, ключ, значение) или None если не найдено
         """
-        pos = self.find_position(key, for_insert=False)
-        if pos is not None:
-            item = self.table[pos]
-            if isinstance(item, tuple):
-                return (pos, item[0], item[1])
+        if not self.validate_key(key):
+            return None
+        
+        segment = self.hash(key)
+        chain = self.table[segment]
+        
+        for k, v in chain:
+            if k == key:
+                return (segment, k, v)
+        
         return None
     
-    def search_by_segment(self, segment: int) -> Optional[Tuple[str, any]]:
+    def search_by_segment(self, segment: int) -> Optional[List[Tuple[str, any]]]:
         """
-        Ищет элемент по номеру сегмента.
+        Ищет элементы по номеру сегмента.
         
         Args:
             segment: Номер сегмента (индекс)
             
         Returns:
-            Кортеж (ключ, значение) или None если сегмент пуст или удален
+            Список кортежей (ключ, значение) или None если сегмент не существует
         """
         if segment < 0 or segment >= self.size:
             return None
         
-        item = self.table[segment]
-        if item is None or item is self.deleted_marker:
+        chain = self.table[segment]
+        if not chain:
             return None
         
-        if isinstance(item, tuple):
-            return item
-        
-        return None
+        return chain.copy()
     
     def delete(self, key: str) -> Tuple[bool, List[str]]:
         """
@@ -215,76 +179,29 @@ class HashTable:
         Returns:
             Кортеж (успех удаления, список ключей элементов с коллизией)
         """
-        pos = self.find_position(key, for_insert=False)
-        if pos is None:
+        if not self.validate_key(key):
             return (False, [])
         
-        # Сохраняем информацию об удаляемом элементе
-        deleted_item = self.table[pos]
-        deleted_key = deleted_item[0] if isinstance(deleted_item, tuple) else key
+        segment = self.hash(key)
+        chain = self.table[segment]
         
-        # Помечаем ячейку как удаленную
-        self.table[pos] = self.deleted_marker
-        self.count -= 1
-        
-        # Ищем элементы с коллизией
-        collision_keys = self._find_collision_elements(deleted_key, pos)
-        
-        return (True, collision_keys)
-    
-    def _find_collision_elements(self, deleted_key: str, deleted_pos: int) -> List[str]:
-        """
-        Находит элементы, которые имели коллизию с удаленным элементом.
-        
-        В двойном хешировании коллизия возникает, когда два ключа имеют одинаковую
-        начальную позицию (h1(key1) == h1(key2)). Также проверяем элементы, которые
-        находятся на позициях, через которые проходил удаленный элемент при вставке.
-        
-        Args:
-            deleted_key: Ключ удаленного элемента
-            deleted_pos: Позиция удаленного элемента
-            
-        Returns:
-            Список ключей элементов с коллизией
-        """
-        collision_keys = []
-        h1_deleted = self.hash1(deleted_key)
-        h2_deleted = self.hash2(deleted_key)
-        
-        # Вычисляем последовательность позиций, через которые проходил удаленный элемент
-        deleted_path = set()
-        for i in range(self.size):
-            pos = (h1_deleted + i * h2_deleted) % self.size
-            deleted_path.add(pos)
-            if pos == deleted_pos:
+        # Ищем элемент для удаления
+        found = False
+        for i, (k, v) in enumerate(chain):
+            if k == key:
+                # Удаляем элемент
+                chain.pop(i)
+                self.count -= 1
+                found = True
                 break
         
-        # Проверяем все элементы в таблице
-        for i in range(self.size):
-            item = self.table[i]
-            if item is None or item is self.deleted_marker:
-                continue
-            
-            if isinstance(item, tuple):
-                item_key = item[0]
-                if item_key == deleted_key:
-                    continue  # Пропускаем сам удаленный элемент
-                
-                item_h1 = self.hash1(item_key)
-                
-                # Коллизия: если начальные позиции совпадают
-                if item_h1 == h1_deleted:
-                    collision_keys.append(item_key)
-                # Также проверяем, находится ли элемент на пути удаленного
-                elif i in deleted_path:
-                    # Проверяем, действительно ли этот элемент должен был быть в этой позиции
-                    # или попал туда из-за коллизии
-                    item_h2 = self.hash2(item_key)
-                    item_expected_pos = item_h1  # Начальная позиция элемента
-                    if item_expected_pos in deleted_path:
-                        collision_keys.append(item_key)
+        if not found:
+            return (False, [])
         
-        return list(set(collision_keys))  # Убираем дубликаты
+        # Ищем элементы с коллизией (все остальные элементы в том же сегменте)
+        collision_keys = [k for k, v in chain if k != key]
+        
+        return (True, collision_keys)
     
     def view(self) -> List[Tuple[int, Optional[str], Optional[any]]]:
         """
@@ -292,16 +209,19 @@ class HashTable:
         
         Returns:
             Список кортежей (номер сегмента, ключ, значение)
+            Для каждого элемента в цепочке создается отдельная запись
         """
         result = []
         for i in range(self.size):
-            item = self.table[i]
-            if item is None:
+            chain = self.table[i]
+            if not chain:
+                # Пустой сегмент
                 result.append((i, None, None))
-            elif item is self.deleted_marker:
-                result.append((i, None, None))  # Удаленные элементы показываем как пустые
-            elif isinstance(item, tuple):
-                result.append((i, item[0], item[1]))
+            else:
+                # Для каждого элемента в цепочке
+                for key, value in chain:
+                    result.append((i, key, value))
+        
         return result
     
     def export_to_csv(self, filename: str = 'hash_table_export.csv') -> bool:
@@ -316,25 +236,23 @@ class HashTable:
         """
         try:
             with open(filename, 'w', encoding='utf-8') as f:
-                f.write('Сегмент,Ключ,Значение,Заполненность\n')
+                f.write('Сегмент,Ключ,Значение,Длина_цепочки\n')
                 for i in range(self.size):
-                    item = self.table[i]
-                    if item is None or item is self.deleted_marker:
-                        f.write(f'{i},,,\n')
-                    elif isinstance(item, tuple):
-                        f.write(f'{i},{item[0]},{item[1]},1\n')
+                    chain = self.table[i]
+                    chain_length = len(chain)
+                    if not chain:
+                        f.write(f'{i},,,0\n')
+                    else:
+                        for key, value in chain:
+                            f.write(f'{i},{key},{value},{chain_length}\n')
             
             # Создаем файл для гистограммы (распределение по сегментам)
             hist_filename = filename.replace('.csv', '_histogram.csv')
             with open(hist_filename, 'w', encoding='utf-8') as f:
-                f.write('Сегмент,Количество элементов\n')
-                filled_count = 0
+                f.write('Сегмент,Количество_элементов,Длина_цепочки\n')
                 for i in range(self.size):
-                    item = self.table[i]
-                    if item is not None and item is not self.deleted_marker:
-                        filled_count += 1
-                f.write(f'Заполненные,{filled_count}\n')
-                f.write(f'Пустые,{self.size - filled_count}\n')
+                    chain_length = len(self.table[i])
+                    f.write(f'{i},{chain_length},{chain_length}\n')
             
             return True
         except Exception as e:
@@ -348,17 +266,20 @@ class HashTable:
         Returns:
             Словарь со статистикой
         """
-        filled = sum(1 for item in self.table 
-                    if item is not None and item is not self.deleted_marker)
-        empty = sum(1 for item in self.table if item is None)
-        deleted = sum(1 for item in self.table if item is self.deleted_marker)
+        filled_segments = sum(1 for chain in self.table if chain)
+        empty_segments = sum(1 for chain in self.table if not chain)
+        
+        # Статистика по длинам цепочек
+        chain_lengths = [len(chain) for chain in self.table if chain]
+        max_chain_length = max(chain_lengths) if chain_lengths else 0
+        avg_chain_length = sum(chain_lengths) / len(chain_lengths) if chain_lengths else 0
         
         return {
             'size': self.size,
-            'filled': filled,
-            'empty': empty,
-            'deleted': deleted,
+            'filled': filled_segments,
+            'empty': empty_segments,
             'count': self.count,
-            'fill_percentage': (filled / self.size * 100) if self.size > 0 else 0
+            'fill_percentage': (filled_segments / self.size * 100) if self.size > 0 else 0,
+            'max_chain_length': max_chain_length,
+            'avg_chain_length': round(avg_chain_length, 2)
         }
-

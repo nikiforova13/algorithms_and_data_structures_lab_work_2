@@ -1,11 +1,11 @@
 """
 Лабораторная работа №2
-Хеширование данных. Хеш-таблица с двойным хешированием.
+Хеширование данных. Хеш-таблица с открытым хешированием.
 
-Вариант 4:
-- Формат ключа: цццБцц (3 цифры, 1 большая буква, 2 цифры)
-- Количество сегментов: 2500
-- Метод разрешения коллизий: Двойное хеширование
+Вариант 21:
+- Формат ключа: цББББц (1 цифра, 4 большие буквы, 1 цифра)
+- Количество сегментов: 1500
+- Метод разрешения коллизий: Открытое хеширование (метод цепочек)
 """
 
 from app.hash_table import HashTable
@@ -14,7 +14,7 @@ from app.hash_table import HashTable
 def print_menu():
     """Выводит меню программы."""
     print("\n" + "="*60)
-    print("ХЕШ-ТАБЛИЦА С ДВОЙНЫМ ХЕШИРОВАНИЕМ")
+    print("ХЕШ-ТАБЛИЦА С ОТКРЫТЫМ ХЕШИРОВАНИЕМ")
     print("="*60)
     print("1. Добавить элемент")
     print("2. Найти элемент по ключу")
@@ -31,12 +31,12 @@ def print_menu():
 def add_element(ht: HashTable):
     """Добавляет элемент в хеш-таблицу."""
     print("\n--- Добавление элемента ---")
-    key = input("Введите ключ (формат: цццБцц, например: 123A45): ").strip()
+    key = input("Введите ключ (формат: цББББц, например: 1ABCD2): ").strip()
     
     if not ht.validate_key(key):
         print("ОШИБКА: Неверный формат ключа!")
-        print("Формат должен быть: цццБцц (3 цифры, 1 большая буква, 2 цифры)")
-        print("Примеры: 123A45, 789B12, 456C78")
+        print("Формат должен быть: цББББц (1 цифра, 4 большие буквы, 1 цифра)")
+        print("Примеры: 1ABCD2, 9XYZQ0, 5QWER3")
         return
     
     value = input("Введите значение (или Enter для ключа): ").strip()
@@ -44,11 +44,12 @@ def add_element(ht: HashTable):
         value = key
     
     if ht.add(key, value):
-        pos = ht.find_position(key, for_insert=False)
-        print(f"✓ Элемент успешно добавлен в сегмент {pos}")
+        segment = ht.hash(key)
+        print(f"✓ Элемент успешно добавлен в сегмент {segment}")
     else:
-        if ht.count >= ht.size:
-            print("ОШИБКА: Хеш-таблица переполнена!")
+        stats = ht.get_statistics()
+        if stats['avg_chain_length'] > 10:
+            print("ОШИБКА: Хеш-таблица переполнена (средняя длина цепочки > 10)!")
         else:
             print("ОШИБКА: Не удалось добавить элемент")
 
@@ -74,18 +75,20 @@ def search_by_key(ht: HashTable):
 
 
 def search_by_segment(ht: HashTable):
-    """Ищет элемент по номеру сегмента."""
+    """Ищет элементы по номеру сегмента."""
     print("\n--- Поиск по номеру сегмента ---")
     try:
         segment = int(input(f"Введите номер сегмента (0-{ht.size-1}): ").strip())
         result = ht.search_by_segment(segment)
         if result:
-            key, value = result
-            print(f"✓ Элемент найден в сегменте {segment}:")
-            print(f"  Ключ: {key}")
-            print(f"  Значение: {value}")
+            print(f"✓ Найдено {len(result)} элементов в сегменте {segment}:")
+            print("-" * 60)
+            print(f"{'Ключ':<15} {'Значение':<20}")
+            print("-" * 60)
+            for key, value in result:
+                print(f"{key:<15} {str(value):<20}")
         else:
-            print(f"✗ Сегмент {segment} пуст или удален")
+            print(f"✗ Сегмент {segment} пуст")
     except ValueError:
         print("ОШИБКА: Введите корректное число")
 
@@ -103,7 +106,7 @@ def view_table(ht: HashTable):
     if show_only_filled:
         filled_items = [(seg, key, val) for seg, key, val in data if key is not None]
         if filled_items:
-            print(f"\nЗаполненные сегменты ({len(filled_items)}):")
+            print(f"\nЭлементы в заполненных сегментах ({len(filled_items)} элементов):")
             print("-" * 60)
             print(f"{'Сегмент':<10} {'Ключ':<15} {'Значение':<20}")
             print("-" * 60)
@@ -113,7 +116,7 @@ def view_table(ht: HashTable):
         else:
             print("Таблица пуста")
     else:
-        print(f"\nВсе сегменты (первые 50):")
+        print(f"\nВсе элементы (первые 50):")
         print("-" * 60)
         print(f"{'Сегмент':<10} {'Ключ':<15} {'Значение':<20}")
         print("-" * 60)
@@ -126,7 +129,7 @@ def view_table(ht: HashTable):
                     print(f"{seg:<10} {'---':<15} {'---':<20}")
         
         if len(data) > 50:
-            print(f"... и еще {len(data) - 50} сегментов")
+            print(f"... и еще {len(data) - 50} элементов")
     
     print("-" * 60)
 
@@ -177,14 +180,17 @@ def show_statistics(ht: HashTable):
     print(f"Размер таблицы: {stats['size']}")
     print(f"Заполненных сегментов: {stats['filled']}")
     print(f"Пустых сегментов: {stats['empty']}")
-    print(f"Удаленных элементов (маркеров): {stats['deleted']}")
     print(f"Количество элементов: {stats['count']}")
-    print(f"Процент заполнения: {stats['fill_percentage']:.2f}%")
+    print(f"Процент заполнения сегментов: {stats['fill_percentage']:.2f}%")
+    print(f"Максимальная длина цепочки: {stats['max_chain_length']}")
+    print(f"Средняя длина цепочки: {stats['avg_chain_length']}")
     
     if stats['fill_percentage'] >= 90:
-        print("\n⚠ ВНИМАНИЕ: Таблица заполнена более чем на 90%!")
-    if stats['count'] >= stats['size']:
-        print("\n⚠ ВНИМАНИЕ: Таблица переполнена!")
+        print("\n⚠ ВНИМАНИЕ: Более 90% сегментов заполнены!")
+    if stats['avg_chain_length'] > 10:
+        print("\n⚠ ВНИМАНИЕ: Средняя длина цепочки превышает 10 элементов!")
+    if stats['max_chain_length'] > 20:
+        print("\n⚠ ВНИМАНИЕ: Обнаружены очень длинные цепочки!")
 
 
 def clear_table(ht: HashTable):
@@ -192,7 +198,7 @@ def clear_table(ht: HashTable):
     print("\n--- Очистка таблицы ---")
     confirm = input("Вы уверены? Все данные будут удалены (y/n): ").strip().lower()
     if confirm == 'y':
-        ht.table = [None] * ht.size
+        ht.table = [[] for _ in range(ht.size)]
         ht.count = 0
         print("✓ Таблица очищена")
     else:
@@ -202,10 +208,10 @@ def clear_table(ht: HashTable):
 def main():
     """Главная функция программы."""
     print("Инициализация хеш-таблицы...")
-    ht = HashTable(size=2500)
+    ht = HashTable(size=1500)
     print(f"✓ Хеш-таблица создана (размер: {ht.size} сегментов)")
-    print("Формат ключа: цццБцц (3 цифры, 1 большая буква, 2 цифры)")
-    print("Примеры: 123A45, 789B12, 456C78")
+    print("Формат ключа: цББББц (1 цифра, 4 большие буквы, 1 цифра)")
+    print("Примеры: 1ABCD2, 9XYZQ0, 5QWER3")
     
     while True:
         print_menu()
